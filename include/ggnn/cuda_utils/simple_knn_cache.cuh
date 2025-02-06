@@ -53,7 +53,7 @@ struct SimpleKNNCache {
   ValueT r_xi;
 
   // # threadIdx.x == 0 stats registers only
-  uint32_t dist_calc_counter;
+  uint32_t r0_dist_calc_counter;
 
   __device__ __forceinline__ void initSharedStorage()
   {
@@ -80,7 +80,7 @@ struct SimpleKNNCache {
     r_prioQ_head = BEST_SIZE;
     if (!threadIdx.x) {
       if constexpr (DIST_STATS)
-        dist_calc_counter = 0;
+        r0_dist_calc_counter = 0;
       r0_visited_head = SORTED_SIZE;
     }
     __syncthreads();
@@ -280,6 +280,10 @@ struct SimpleKNNCache {
 
       const KeyT other_m = (d_translation) ? d_translation[other_n] : other_n;
       const ValueT dist = rs_dist_calc.distance_synced(other_m);
+      if constexpr (DIST_STATS) {
+        if (!threadIdx.x)
+          ++r0_dist_calc_counter;
+      }
 
       if (dist < criteria())
         push(other_n, dist);
@@ -353,7 +357,7 @@ struct SimpleKNNCache {
 
   __device__ __forceinline__ uint32_t get_dist_stats()
   {
-    return dist_calc_counter;
+    return r0_dist_calc_counter;
   }
 
   /**
