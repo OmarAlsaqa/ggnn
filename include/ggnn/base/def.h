@@ -29,6 +29,9 @@ enum class DistanceMeasure : int {
   Cosine = 1
 };
 
+// we empirically found 4 layers to work best across all datasets
+static constexpr uint32_t MAX_NUM_LAYERS = 4;
+
 inline float sizeInGB(const size_t bytes)
 {
   return static_cast<float>(bytes / (1024UL * 1024UL)) / 1024.0f;

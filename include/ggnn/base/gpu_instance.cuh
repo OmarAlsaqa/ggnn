@@ -88,15 +88,14 @@ class GPUInstance {
   ShardingConfiguration shard_config{};
   GraphConfig graph_config{};
 
-  float build(const Dataset<BaseT>& base, const std::filesystem::path& graph_dir,
-              const GraphConfig& graph_config, const float tau_build,
+  float build(const Dataset<BaseT>& base, const GraphConfig& graph_config, const float tau_build,
               const uint32_t refinement_iterations, const DistanceMeasure measure,
               const size_t reserved_gpu_memory);
-  void load(const Dataset<BaseT>& base, const std::filesystem::path& graph_dir,
-            const GraphConfig& graph_config, const size_t reserved_gpu_memory);
-  void store(const std::filesystem::path& graph_dir);
+  void load(const Dataset<BaseT>& base, const GraphConfig& graph_config,
+            const size_t reserved_gpu_memory);
+  void store();
 
-  [[nodiscard]] Results query(const Dataset<BaseT>& query, const std::filesystem::path& graph_dir,
+  [[nodiscard]] Results query(const Dataset<BaseT>& query,
                               const uint32_t KQuery, const uint32_t max_iterations,
                               const float tau_query, const DistanceMeasure measure);
 
@@ -121,10 +120,8 @@ class GPUInstance {
     void download(const GPUGraphBuffer& gpu_buffer);
   };
 
-  [[nodiscard]] const CPUGraphBuffer& getCPUGraphShard(const std::filesystem::path& graph_dir,
-                                                       const uint32_t global_shard_id);
-  [[nodiscard]] const GPUGraphBuffer& getGPUGraphShard(const std::filesystem::path& graph_dir,
-                                                       const uint32_t global_shard_id,
+  [[nodiscard]] const CPUGraphBuffer& getCPUGraphShard(const uint32_t global_shard_id);
+  [[nodiscard]] const GPUGraphBuffer& getGPUGraphShard(const uint32_t global_shard_id,
                                                        const bool sync_stream = true);
   [[nodiscard]] const GPUBaseBuffer& getGPUBaseShard(const uint32_t global_shard_id,
                                                      const bool sync_stream = true);
@@ -188,14 +185,13 @@ class GPUInstance {
    * Swap out a newly constructed graph shard from GPU to CPU.
    * If necessary, or requested by \c force_store, store into a file.
    */
-  void swapOutPart(const std::filesystem::path& graph_dir, const uint32_t global_shard_id,
-                   bool force_to_ram = false, bool force_to_file = false);
+  void swapOutPart(const uint32_t global_shard_id, bool force_to_ram = false,
+                   bool force_to_file = false);
   /**
    * Swap in a previously constructed graph shard from CPU to GPU.
    * If necessary, or requested by \c force_load, load from a file.
    */
-  void swapInPart(const std::filesystem::path& graph_dir, const uint32_t global_shard_id,
-                  bool force_load_from_file = false);
+  void swapInPart(const uint32_t global_shard_id, bool force_load_from_file = false);
   /**
    * Wait for swap in / swap out of the given part to complete.
    */

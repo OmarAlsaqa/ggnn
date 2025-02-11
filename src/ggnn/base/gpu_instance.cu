@@ -256,8 +256,7 @@ void GPUInstance<KeyT, ValueT, BaseT>::prefetchBase()
 
 template <typename KeyT, typename ValueT, typename BaseT>
 const GPUInstance<KeyT, ValueT, BaseT>::CPUGraphBuffer&
-GPUInstance<KeyT, ValueT, BaseT>::getCPUGraphShard(const std::filesystem::path& graph_dir,
-                                                   const uint32_t global_shard_id)
+GPUInstance<KeyT, ValueT, BaseT>::getCPUGraphShard(const uint32_t global_shard_id)
 {
   const uint32_t num_previous_shards = shard_config.num_shards * shard_config.device_index;
   CHECK_GE(global_shard_id, num_previous_shards);
@@ -268,12 +267,12 @@ GPUInstance<KeyT, ValueT, BaseT>::getCPUGraphShard(const std::filesystem::path& 
   if (cpu_buffer.global_shard_id != global_shard_id) {
     if (d_buffers.size() < shard_config.num_shards) {
       // need to load from file
-      swapInPart(graph_dir, global_shard_id);
+      swapInPart(global_shard_id);
     }
     else {
       // need to download from GPU
       CHECK_EQ(d_buffers.size(), shard_config.num_shards);
-      swapOutPart(graph_dir, global_shard_id, true);
+      swapOutPart(global_shard_id, true);
     }
     waitForPart(global_shard_id);
   }
@@ -283,8 +282,7 @@ GPUInstance<KeyT, ValueT, BaseT>::getCPUGraphShard(const std::filesystem::path& 
 
 template <typename KeyT, typename ValueT, typename BaseT>
 const GPUInstance<KeyT, ValueT, BaseT>::GPUGraphBuffer&
-GPUInstance<KeyT, ValueT, BaseT>::getGPUGraphShard(const std::filesystem::path& graph_dir,
-                                                   const uint32_t global_shard_id,
+GPUInstance<KeyT, ValueT, BaseT>::getGPUGraphShard(const uint32_t global_shard_id,
                                                    const bool sync_stream)
 {
   const uint32_t num_previous_shards = shard_config.num_shards * shard_config.device_index;
@@ -294,7 +292,7 @@ GPUInstance<KeyT, ValueT, BaseT>::getGPUGraphShard(const std::filesystem::path& 
 
   const GPUGraphBuffer& gpu_buffer = getGPUGraphBuffer(on_gpu_shard_id);
   if (gpu_buffer.global_shard_id != global_shard_id) {
-    swapInPart(graph_dir, global_shard_id);
+    swapInPart(global_shard_id);
     if (sync_stream)
       waitForPart(global_shard_id);
   }
@@ -368,8 +366,7 @@ void GPUInstance<KeyT, ValueT, BaseT>::waitForPart(const uint32_t global_shard_i
 }
 
 template <typename KeyT, typename ValueT, typename BaseT>
-void GPUInstance<KeyT, ValueT, BaseT>::swapOutPart(const std::filesystem::path& graph_dir,
-                                                   const uint32_t global_shard_id,
+void GPUInstance<KeyT, ValueT, BaseT>::swapOutPart(const uint32_t global_shard_id,
                                                    bool force_to_ram, bool force_to_file)
 {
   const uint32_t num_gpu_buffers = static_cast<uint32_t>(d_buffers.size());
@@ -411,7 +408,7 @@ void GPUInstance<KeyT, ValueT, BaseT>::swapOutPart(const std::filesystem::path& 
     if (swap_to_disk || force_to_file) {
       CHECK_EQ(cpu_buffer.global_shard_id, global_shard_id);
       const std::filesystem::path part_filename =
-          graph_dir / std::string{"part_" + std::to_string(global_shard_id) + ".ggnn"};
+          graph_config.graph_dir / std::string{"part_" + std::to_string(global_shard_id) + ".ggnn"};
       cpu_buffer.store(part_filename);
       VLOG(2) << "[GPU: " << shard_config.device_index << "] stored part " << global_shard_id
               << " to " << part_filename.c_str();
@@ -420,8 +417,7 @@ void GPUInstance<KeyT, ValueT, BaseT>::swapOutPart(const std::filesystem::path& 
 }
 
 template <typename KeyT, typename ValueT, typename BaseT>
-void GPUInstance<KeyT, ValueT, BaseT>::swapInPart(const std::filesystem::path& graph_dir,
-                                                  const uint32_t global_shard_id,
+void GPUInstance<KeyT, ValueT, BaseT>::swapInPart(const uint32_t global_shard_id,
                                                   bool force_load_from_file)
 {
   const uint32_t num_previous_shards = shard_config.num_shards * shard_config.device_index;
@@ -452,7 +448,7 @@ void GPUInstance<KeyT, ValueT, BaseT>::swapInPart(const std::filesystem::path& g
     }
     else {
       const std::filesystem::path part_filename =
-          graph_dir / std::string{"part_" + std::to_string(global_shard_id) + ".ggnn"};
+          graph_config.graph_dir / std::string{"part_" + std::to_string(global_shard_id) + ".ggnn"};
       VLOG(4) << "[GPU: " << shard_config.device_index << "] loading part " << global_shard_id
               << " from " << part_filename.c_str();
       cpu_buffer.load(part_filename, global_shard_id);
@@ -498,7 +494,6 @@ void GPUInstance<KeyT, ValueT, BaseT>::loadBasePart(const uint32_t global_shard_
 
 template <typename KeyT, typename ValueT, typename BaseT>
 float GPUInstance<KeyT, ValueT, BaseT>::build(const Dataset<BaseT>& base,
-                                              const std::filesystem::path& graph_dir,
                                               const GraphConfig& config, const float tau_build,
                                               const uint32_t refinement_iterations,
                                               const DistanceMeasure measure,
@@ -559,7 +554,7 @@ float GPUInstance<KeyT, ValueT, BaseT>::build(const Dataset<BaseT>& base,
 
     getGPUGraphBuffer(i).global_shard_id = global_shard_id;
 
-    swapOutPart(graph_dir, global_shard_id);
+    swapOutPart(global_shard_id);
 
     // prefetch base for following in-memory shards
     if (i + d_base_buffers.size() < shard_config.num_shards)
@@ -585,7 +580,6 @@ float GPUInstance<KeyT, ValueT, BaseT>::build(const Dataset<BaseT>& base,
 
 template <typename KeyT, typename ValueT, typename BaseT>
 void GPUInstance<KeyT, ValueT, BaseT>::load(const Dataset<BaseT>& base,
-                                            const std::filesystem::path& graph_dir,
                                             const GraphConfig& config,
                                             const size_t reserved_gpu_memory)
 {
@@ -595,7 +589,7 @@ void GPUInstance<KeyT, ValueT, BaseT>::load(const Dataset<BaseT>& base,
 
   for (uint32_t i = 0; i < shard_config.num_shards; i++) {
     const uint32_t global_shard_id = shard_config.device_index * shard_config.num_shards + i;
-    swapInPart(graph_dir, global_shard_id, true);
+    swapInPart(global_shard_id, true);
   }
   for (uint32_t i = 0; i < shard_config.num_shards; i++) {
     const uint32_t global_shard_id = shard_config.device_index * shard_config.num_shards + i;
@@ -609,11 +603,11 @@ void GPUInstance<KeyT, ValueT, BaseT>::load(const Dataset<BaseT>& base,
 }
 
 template <typename KeyT, typename ValueT, typename BaseT>
-void GPUInstance<KeyT, ValueT, BaseT>::store(const std::filesystem::path& graph_dir)
+void GPUInstance<KeyT, ValueT, BaseT>::store()
 {
   for (uint32_t i = 0; i < shard_config.num_shards; i++) {
     const uint32_t global_shard_id = shard_config.device_index * shard_config.num_shards + i;
-    swapOutPart(graph_dir, global_shard_id, true, true);
+    swapOutPart(global_shard_id, true, true);
   }
   for (uint32_t i = 0; i < shard_config.num_shards; i++) {
     const uint32_t global_shard_id = shard_config.device_index * shard_config.num_shards + i;
@@ -625,8 +619,8 @@ void GPUInstance<KeyT, ValueT, BaseT>::store(const std::filesystem::path& graph_
 
 template <typename KeyT, typename ValueT, typename BaseT>
 typename GPUInstance<KeyT, ValueT, BaseT>::Results GPUInstance<KeyT, ValueT, BaseT>::query(
-    const Dataset<BaseT>& query, const std::filesystem::path& graph_dir, const uint32_t KQuery,
-    const uint32_t max_iterations, const float tau_query, const DistanceMeasure measure)
+    const Dataset<BaseT>& query, const uint32_t KQuery, const uint32_t max_iterations,
+    const float tau_query, const DistanceMeasure measure)
 {
   if (d_buffers.empty() || getGPUGraphBuffer(0).global_shard_id == -1U) {
     LOG(ERROR) << "no graph available for query. did you forget to build one?";
@@ -662,7 +656,7 @@ typename GPUInstance<KeyT, ValueT, BaseT>::Results GPUInstance<KeyT, ValueT, Bas
     const uint32_t j = process_shards_back_to_front ? shard_config.num_shards - i - 1 : i;
     const uint32_t global_shard_id = num_previous_shards + j;
     loadBasePart(global_shard_id);
-    swapInPart(graph_dir, global_shard_id);
+    swapInPart(global_shard_id);
   }
 
   // query all shards
@@ -695,13 +689,13 @@ typename GPUInstance<KeyT, ValueT, BaseT>::Results GPUInstance<KeyT, ValueT, Bas
     if (process_shards_back_to_front) {
       if (j >= prefetch_amount && j - prefetch_amount < shard_config.num_shards - num_gpu_buffers) {
         loadBasePart(global_shard_id - prefetch_amount);
-        swapInPart(graph_dir, global_shard_id - prefetch_amount);
+        swapInPart(global_shard_id - prefetch_amount);
       }
     }
     else if (j + prefetch_amount < shard_config.num_shards &&
              j + prefetch_amount >= num_gpu_buffers) {
       loadBasePart(global_shard_id + prefetch_amount);
-      swapInPart(graph_dir, global_shard_id + prefetch_amount);
+      swapInPart(global_shard_id + prefetch_amount);
     }
 
     CHECK_CUDA(cudaEventSynchronize(stop));

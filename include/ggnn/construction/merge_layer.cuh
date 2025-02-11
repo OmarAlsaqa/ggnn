@@ -19,7 +19,6 @@ limitations under the License.
 #define INCLUDE_GGNN_MERGE_LAYER_CUH
 
 #include <ggnn/base/def.h>
-#include <ggnn/base/graph_config.h>
 
 #include <algorithm>
 #include <array>
@@ -82,8 +81,8 @@ struct MergeKernel {
   const uint32_t S0;         // segment size on layer 0
   const uint32_t S0_offset;  // segment size offset on layer 0
 
-  const std::array<uint32_t, GraphConfig::L> Ns_offsets;   // start position of graph layer
-  const std::array<uint32_t, GraphConfig::L> STs_offsets;  // start position of translation layer
+  const std::array<uint32_t, MAX_NUM_LAYERS> Ns_offsets;   // start position of graph layer
+  const std::array<uint32_t, MAX_NUM_LAYERS> STs_offsets;  // start position of translation layer
 
   const float tau_build;
 };

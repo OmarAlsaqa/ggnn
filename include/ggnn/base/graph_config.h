@@ -23,6 +23,7 @@ limitations under the License.
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 
 namespace ggnn {
 
@@ -38,9 +39,8 @@ struct GraphParameters {
   /// number of neighbors per point
   uint32_t KBuild{};
 
-  /// number of layers
-  static constexpr uint32_t L =
-      4;  // we empirically found 4 layers to work best across all datasets
+  /// directory for loading/storing graph shards
+  std::filesystem::path graph_dir{};
 };
 
 /**
@@ -52,6 +52,9 @@ struct GraphDerivedParameters : public GraphParameters {
 
   /// number of inverse (foreign) links per point, part of KBuild
   uint32_t KF{KBuild / 2};
+
+  /// number of layers
+  static constexpr uint32_t L{MAX_NUM_LAYERS};
 
   /// growth factor (number of sub-graphs merged together per layer)
   uint32_t G{};
@@ -73,10 +76,8 @@ struct GraphDerivedParameters : public GraphParameters {
  * Automatically derived graph dimensions
  */
 struct GraphDimensions {
-  static constexpr uint32_t L = GraphParameters::L;
-
   GraphDimensions() = default;
-  GraphDimensions(uint32_t N, uint32_t S, uint32_t G);
+  GraphDimensions(const GraphDerivedParameters& params);
 
   /// total number of neighborhoods in the graph
   uint32_t N_all{};
@@ -84,21 +85,19 @@ struct GraphDimensions {
   uint32_t ST_all{};
 
   /// blocks/segments per layer
-  std::array<uint32_t, L> Bs{};  // [L]
+  std::array<uint32_t, MAX_NUM_LAYERS> Bs{};  // [L]
   /// neighborhoods per layer
-  std::array<uint32_t, L> Ns{};  // [L]
+  std::array<uint32_t, MAX_NUM_LAYERS> Ns{};  // [L]
   /// start of neighborhoods per layer
-  std::array<uint32_t, L> Ns_offsets{};  // [L]
+  std::array<uint32_t, MAX_NUM_LAYERS> Ns_offsets{};  // [L]
   /// start of selection/translation per layer
-  std::array<uint32_t, L> STs_offsets{};  // [L]
+  std::array<uint32_t, MAX_NUM_LAYERS> STs_offsets{};  // [L]
 };
 
 /**
  * Combined Configuration of the GGNN search graph layout
  */
 struct GraphConfig : public GraphDerivedParameters, public GraphDimensions {
-  using GraphParameters::L;
-
   GraphConfig() = default;
   GraphConfig(const GraphParameters& params);
 

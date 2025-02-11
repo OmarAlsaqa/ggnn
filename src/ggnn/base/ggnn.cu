@@ -115,6 +115,11 @@ struct GGNNImplBase : public GGNNConfig, public GGNN<KeyT, ValueT> {
     throw std::runtime_error("The base needs to be set before building a graph.");
   }
 
+  void load(const uint32_t /*KBuild*/) override
+  {
+    throw std::runtime_error("The base needs to be set before loading a graph.");
+  }
+
   const Graph& getGraph(const uint32_t /*global_shard_id*/) override
   {
     throw std::runtime_error("No graph has been built or loaded yet.");
@@ -151,13 +156,18 @@ struct GGNNImpl : public GGNNImplBase<KeyT, ValueT> {
     this->base = std::move(base);
   }
 
-  void prepare(uint32_t KBuild)
+  GraphConfig prepare(uint32_t KBuild)
   {
     // TODO: remove the existing GPU instances instead?
     if (!gpu_instances.empty())
       throw std::runtime_error("A graph has already been built or loaded.");
 
-    GraphParameters graph_params{.N = static_cast<uint32_t>(base.N), .D = base.D, .KBuild = KBuild};
+    GraphParameters graph_params{
+      .N = static_cast<uint32_t>(base.N),
+      .D = base.D,
+      .KBuild = KBuild,
+      .graph_dir = graph_dir
+    };
 
     if (N_shard > 0) {
       CHECK_EQ(base.N % N_shard, 0)
@@ -200,6 +210,7 @@ struct GGNNImpl : public GGNNImplBase<KeyT, ValueT> {
     }
 
     VLOG(2) << "GGNN multi-GPU setup configured.";
+    return graph_config;
   }
 
   void build(const uint32_t KBuild, const float tau_build, const uint32_t refinement_iterations,
@@ -208,7 +219,7 @@ struct GGNNImpl : public GGNNImplBase<KeyT, ValueT> {
     if (!base.data())
       throw std::runtime_error("The base needs to be set before building a graph.");
 
-    prepare(KBuild);
+    const GraphConfig graph_config = prepare(KBuild);
 
     VLOG(0) << "GGNN::build() started.";
 
@@ -221,9 +232,9 @@ struct GGNNImpl : public GGNNImplBase<KeyT, ValueT> {
 
     for (auto& gpu_instance : gpu_instances)
       build_threads.emplace_back([&]() -> void {
-        const float build_time = gpu_instance.build(
-            base, graph_dir, GraphParameters{gpu_instance.shard_config.N_shard, base.D, KBuild},
-            tau_build, refinement_iterations, measure, this->reserved_gpu_memory);
+        const float build_time = gpu_instance.build(base, graph_config,
+                                                    tau_build, refinement_iterations, measure,
+                                                    this->reserved_gpu_memory);
         build_time_ms += build_time;
       });
     for (auto& build_thread : build_threads)
@@ -249,7 +260,7 @@ struct GGNNImpl : public GGNNImplBase<KeyT, ValueT> {
     store_threads.reserve(num_gpus);
 
     for (auto& gpu_instance : gpu_instances)
-      store_threads.emplace_back([&]() -> void { gpu_instance.store(graph_dir); });
+      store_threads.emplace_back([&]() -> void { gpu_instance.store(); });
     for (auto& thread : store_threads)
       thread.join();
   }
@@ -259,7 +270,7 @@ struct GGNNImpl : public GGNNImplBase<KeyT, ValueT> {
     if (!base.data())
       throw std::runtime_error("The base needs to be set before loading a graph.");
 
-    prepare(KBuild);
+    const GraphConfig graph_config = prepare(KBuild);
 
     const uint32_t num_gpus = static_cast<uint32_t>(gpu_instances.size());
     std::vector<std::thread> load_threads;
@@ -267,9 +278,7 @@ struct GGNNImpl : public GGNNImplBase<KeyT, ValueT> {
 
     for (auto& gpu_instance : gpu_instances)
       load_threads.emplace_back([&]() -> void {
-        gpu_instance.load(base, graph_dir,
-                          GraphParameters{gpu_instance.shard_config.N_shard, base.D, KBuild},
-                          this->reserved_gpu_memory);
+        gpu_instance.load(base, graph_config, this->reserved_gpu_memory);
       });
     for (auto& thread : load_threads)
       thread.join();
@@ -301,7 +310,7 @@ struct GGNNImpl : public GGNNImplBase<KeyT, ValueT> {
         throw std::runtime_error(
             "Returning query results on GPU is only possible when using a single GPU.");
       Results d_results =
-          gpu_instance_0.query(query, graph_dir, KQuery, max_iterations, tau_query, measure);
+          gpu_instance_0.query(query, KQuery, max_iterations, tau_query, measure);
       return d_results;
     }
 
@@ -311,7 +320,7 @@ struct GGNNImpl : public GGNNImplBase<KeyT, ValueT> {
     auto run_query = [&](uint32_t device_i) -> void {
       GPUInstance& gpu_instance = gpu_instances.at(device_i);
       Results d_results =
-          gpu_instance.query(query, graph_dir, KQuery, max_iterations, tau_query, measure);
+          gpu_instance.query(query, KQuery, max_iterations, tau_query, measure);
       auto& h_results = result_merger.partial_results_per_gpu.at(device_i);
       // TODO: use a stream assigned to this GPU?
       // cudaStream_t shard0Stream = gpu_instance_0.getGPUGraphBuffer(0).stream.get();
@@ -397,12 +406,12 @@ struct GGNNImpl : public GGNNImplBase<KeyT, ValueT> {
     for (auto& gpu_instance : gpu_instances) {
       if (gpu_instance.hasPart(global_shard_id)) {
         if (return_results_on_gpu) {
-          const auto& gpu_graph_shard = gpu_instance.getGPUGraphShard(graph_dir, global_shard_id);
+          const auto& gpu_graph_shard = gpu_instance.getGPUGraphShard(global_shard_id);
           CHECK_EQ(gpu_graph_shard.global_shard_id, global_shard_id);
           return gpu_graph_shard.graph;
         }
         else {
-          const auto& cpu_graph_shard = gpu_instance.getCPUGraphShard(graph_dir, global_shard_id);
+          const auto& cpu_graph_shard = gpu_instance.getCPUGraphShard(global_shard_id);
           CHECK_EQ(cpu_graph_shard.global_shard_id, global_shard_id);
           return cpu_graph_shard.graph;
         }

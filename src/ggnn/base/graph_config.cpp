@@ -36,28 +36,28 @@ constexpr uint32_t powInt(const uint32_t base, const uint32_t power)
   return base * powInt(base, power - 1);
 }
 
-GraphDimensions::GraphDimensions(uint32_t N, uint32_t S, uint32_t G)
+GraphDimensions::GraphDimensions(const GraphDerivedParameters& params)
 {
   // fixed block hierarchy
-  for (uint32_t l = L - 1, B = 1; l != -1U; --l, B *= G) {
+  for (uint32_t l = params.L - 1, B = 1; l != -1U; --l, B *= params.G) {
     Bs[l] = B;
-    Ns[l] = B * S;
+    Ns[l] = B * params.S;
   }
   // bottom layer has all points (block sizes adjust accordingly)
-  Ns[0] = N;
+  Ns[0] = params.N;
   // no offsets in layer 0
   Ns_offsets[0] = 0;
   STs_offsets[0] = 0;
   // no selection/translation in layer 0
   STs_offsets[1] = 0;
-  Ns_offsets[1] = N;
+  Ns_offsets[1] = Ns[0];
 
-  for (uint32_t l = 2; l < L; ++l) {
+  for (uint32_t l = 2; l < params.L; ++l) {
     Ns_offsets[l] = Ns_offsets[l - 1] + Ns[l - 1];
     STs_offsets[l] = STs_offsets[l - 1] + Ns[l - 1];
   }
-  N_all = Ns_offsets[L - 1] + Ns[L - 1];
-  ST_all = STs_offsets[L - 1] + Ns[L - 1];
+  N_all = Ns_offsets[params.L - 1] + Ns[params.L - 1];
+  ST_all = STs_offsets[params.L - 1] + Ns[params.L - 1];
 }
 
 GraphDerivedParameters::GraphDerivedParameters(const GraphParameters& params)
@@ -65,7 +65,7 @@ GraphDerivedParameters::GraphDerivedParameters(const GraphParameters& params)
 {
   /// theoretical growth factor (number of sub-graphs merged together per layer)
   /// graph grows top down: 1*S, G*S, G*G*S, G*G*G*S0+S0_off == N
-  const float growth = std::pow(static_cast<float>(N) / static_cast<float>(S), 1.f / (L - 1));
+  const float growth = std::pow(static_cast<float>(params.N) / static_cast<float>(S), 1.f / (L - 1));
 
   // pick between the closest integers
   const uint32_t Gf = static_cast<uint32_t>(growth);
@@ -98,7 +98,7 @@ GraphDerivedParameters::GraphDerivedParameters(const GraphParameters& params)
 }
 
 GraphConfig::GraphConfig(const GraphParameters& params)
-    : GraphDerivedParameters{params}, GraphDimensions{N, S, G}
+    : GraphDerivedParameters{params}, GraphDimensions{*static_cast<GraphDerivedParameters*>(this)}
 {
   VLOG(1) << "GraphConfig(): N: " << N << ", K: " << KBuild << ", KF: " << KF << ", L: " << L
           << ", G: " << G << ", S: " << S << ", S0: " << S0 << ", S0_off: " << S0_off

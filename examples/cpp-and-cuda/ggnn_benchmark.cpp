@@ -39,7 +39,7 @@ DEFINE_uint32(subset, 0, "Number of base vectors to use.");
 DEFINE_string(query, "", "Path to file with query vectors (fvecs/bvecs).");
 DEFINE_string(gt, "", "Path to file with groundtruth vectors (ivecs).");
 DEFINE_string(graph_dir, "", "Directory to store and load ggnn graph files.");
-DEFINE_uint32(k_build, 24, "Number of neighbors for graph construction");
+DEFINE_uint32(k_build, 24, "Number of neighbors for graph construction.");
 DEFINE_double(tau_build, 0.5, "Search graph construction slack factor.");
 DEFINE_uint32(refinement_iterations, 2, "Number of refinement iterations.");
 DEFINE_uint32(k_query, 10, "Number of neighbors to query for.");
