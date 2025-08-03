@@ -1,7 +1,8 @@
 #pragma once
 
 #include "../utils/simple_knn_cache.cuh"
-#include "ggnn_cpu.h"
+#include "../../ggnn_config.h"
+#include "../../cpu/ggnn_cpu.h"
 
 namespace ggnn {
 namespace cuda {
@@ -28,9 +29,9 @@ struct MergeKernel {
   uint32_t KBuild;
   uint32_t S;
   const BaseT* d_base;
-  const KeyT* d_selection;
-  const KeyT* d_translation;
-  const KeyT* d_graph;
+  KeyT* d_selection;
+  KeyT* d_translation;
+  KeyT* d_graph;
   KeyT* d_graph_buffer;
   const float* d_nn1_stats;
   float* d_nn1_dist_buffer;
@@ -44,31 +45,32 @@ struct MergeKernel {
   float tau_build;
 
   // --- CONSTRUCTOR ---
-  MergeKernel(uint32_t D, DistanceMeasure measure, uint32_t KBuild, const BaseT* d_base,
-              const KeyT* d_translation, const KeyT* d_graph, KeyT* d_graph_buffer,
-              const float* d_nn1_stats, float* d_nn1_dist_buffer, uint32_t S, uint32_t S_offset,
-              uint32_t layer_top, uint32_t layer_btm, uint32_t G, uint32_t S0, uint32_t S0_offset,
-              const std::array<uint32_t, 4>& Ns_offsets, const std::array<uint32_t, 4>& STs_offsets,
-              float tau_build)
-      : D(D),
-        measure(measure),
-        KBuild(KBuild),
-        S(S),
-        d_base(d_base),
-        d_selection(d_translation + STs_offsets[layer_top]),
-        d_translation(d_translation),
-        d_graph(d_graph),
-        d_graph_buffer(d_graph_buffer),
-        d_nn1_stats(d_nn1_stats),
-        d_nn1_dist_buffer(d_nn1_dist_buffer),
-        layer_top(layer_top),
-        layer_btm(layer_btm),
-        G(G),
-        S0(S0),
-        S0_offset(S0_offset),
-        Ns_offsets(Ns_offsets),
-        STs_offsets(STs_offsets),
-        tau_build(tau_build)
+  MergeKernel(uint32_t D_in, DistanceMeasure measure_in, uint32_t KBuild_in, const BaseT* d_base_in,
+              KeyT* d_selection_in, KeyT* d_translation_in, KeyT* d_graph_in,
+              KeyT* d_graph_buffer_in, const float* d_nn1_stats_in, float* d_nn1_dist_buffer_in,
+              uint32_t S_in, uint32_t layer_top_in, uint32_t layer_btm_in, uint32_t G_in,
+              uint32_t S0_in, uint32_t S0_offset_in, const std::array<uint32_t, 4>& Ns_offsets_in,
+              const std::array<uint32_t, 4>& STs_offsets_in, float tau_build_in)
+      : D(D_in),
+        measure(measure_in),
+        KBuild(KBuild_in),
+        S(S_in),
+        d_base(d_base_in),
+        // The selection pointer is derived from the translation pointer
+        d_selection(d_translation_in - STs_offsets_in[layer_top_in] + STs_offsets_in[layer_btm_in]),
+        d_translation(d_translation_in),
+        d_graph(d_graph_in),
+        d_graph_buffer(d_graph_buffer_in),
+        d_nn1_stats(d_nn1_stats_in),
+        d_nn1_dist_buffer(d_nn1_dist_buffer_in),
+        layer_top(layer_top_in),
+        layer_btm(layer_btm_in),
+        G(G_in),
+        S0(S0_in),
+        S0_offset(S0_offset_in),
+        Ns_offsets(Ns_offsets_in),
+        STs_offsets(STs_offsets_in),
+        tau_build(tau_build_in)
   {
   }
   // --- Device-Side Helper Function ---
@@ -93,7 +95,7 @@ struct MergeKernel {
 
   // --- Device-Side Implementation ---
   // (Implementation from original merge_layer.cu)
-  __device__ __forceinline__ void operator()() const
+  __device__ __forceinline__ void operator()()
   {
     static constexpr uint32_t K_BLOCK = 32;
     static_assert(K_BLOCK <= BLOCK_DIM_X);

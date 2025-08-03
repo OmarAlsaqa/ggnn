@@ -4,7 +4,19 @@ from typing import Tuple
 
 # This is the crucial import. It brings in the C++ functions we bound in ggnn.cpp.
 # The name '_C' should match what you have in setup.py.
-from . import _C as ggnn_torch_backend
+from . import _C as _backend
+
+# 2. Expose the user-facing enum directly at the package level.
+#    This makes `ggnn_extension.DistanceMeasure` available to users.
+DistanceMeasure = _backend.DistanceMeasure
+
+# This is a list of the public-facing names that will be available
+# when a user does 'from ggnn_extension import *'
+__all__ = [
+    "GGNNTorch",
+    "DistanceMeasure",
+]
+
 
 class GGNNTorch(nn.Module):
     """
@@ -22,10 +34,10 @@ class GGNNTorch(nn.Module):
         refinement_iterations (int, optional): Number of refinement passes to improve graph
                                                quality after the initial build. Defaults to 2.
     """
-    def __init__(self,
-                 k_build: int,
-                 tau_build: float = 1.0,
-                 refinement_iterations: int = 2):
+
+    def __init__(
+        self, k_build: int, tau_build: float = 1.0, refinement_iterations: int = 2
+    ):
         super().__init__()
 
         # Store build-time configuration parameters
@@ -36,10 +48,16 @@ class GGNNTorch(nn.Module):
         # The graph and base tensors will be stored here after 'build()' is called.
         # We register them as buffers, so PyTorch will manage their memory,
         # including moving them between devices with .to(device).
-        self.register_buffer('graph_tensor', None)
-        self.register_buffer('base_tensor', None)
+        self.register_buffer("graph_tensor", None)
+        self.register_buffer("base_tensor", None)
+        # Store the distance measure used for building
+        self.build_measure = None
 
-    def build(self, base_tensor: torch.Tensor, measure: ggnn_torch_backend.DistanceMeasure = ggnn_torch_backend.DistanceMeasure.Euclidean):
+    def build(
+        self,
+        base_tensor: torch.Tensor,
+        measure: DistanceMeasure = DistanceMeasure.Euclidean,
+    ):
         """
         Builds the GGNN search graph from the base tensor and stores it in the module.
         This method must be called once before you can perform queries.
@@ -50,29 +68,32 @@ class GGNNTorch(nn.Module):
                                                                     Defaults to Euclidean.
         """
         if self.graph_tensor is not None:
-            print("Warning: Graph is already built. Re-building will overwrite the existing graph.")
+            print(
+                "Warning: Graph is already built. Re-building will overwrite the existing graph."
+            )
 
         # The base tensor needs to be stored for distance calculations during the query phase.
         self.base_tensor = base_tensor
+        self.build_measure = measure
 
         # Call the C++ backend function to perform the heavy lifting on the GPU.
         # The function returns a raw byte tensor containing the graph data.
-        self.graph_tensor = ggnn_torch_backend.build_graph(
+        self.graph_tensor = _backend.build_graph(
             base_tensor=self.base_tensor,
             k_build=self.k_build,
             tau_build=self.tau_build,
             refinement_iterations=self.refinement_iterations,
-            measure=measure
+            measure=self.build_measure,
         )
         print(f"GGNN graph built successfully for tensor of shape {base_tensor.shape}.")
 
-    def forward(self,
-                query_tensor: torch.Tensor,
-                k_query: int,
-                tau_query: float = 1.0,
-                max_iterations: int = 400,
-                measure: ggnn_torch_backend.DistanceMeasure = ggnn_torch_backend.DistanceMeasure.Euclidean
-                ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        query_tensor: torch.Tensor,
+        k_query: int,
+        tau_query: float = 1.0,
+        max_iterations: int = 400,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Performs a fast approximate nearest neighbor search on the pre-built graph.
 
@@ -89,11 +110,13 @@ class GGNNTorch(nn.Module):
             A tuple of (indices, distances) tensors, both of shape [Q, k_query].
         """
         if self.graph_tensor is None or self.base_tensor is None:
-            raise RuntimeError("The graph has not been built. Please call .build(base_tensor) before querying.")
-        
+            raise RuntimeError(
+                "The graph has not been built. Please call .build(base_tensor) before querying."
+            )
+
         # Call the C++ backend function for the query.
         # We pass the query data along with the graph and base tensors stored in the module.
-        indices, distances = ggnn_torch_backend.query_graph(
+        indices, distances = _backend.query_graph(
             query_tensor=query_tensor,
             graph_tensor=self.graph_tensor,
             base_tensor=self.base_tensor,
@@ -101,16 +124,17 @@ class GGNNTorch(nn.Module):
             k_query=k_query,
             tau_query=tau_query,
             max_iterations=max_iterations,
-            measure=measure
+            measure=self.build_measure,
         )
         return indices, distances
 
     @staticmethod
-    def brute_force_search(base_tensor: torch.Tensor,
-                           query_tensor: torch.Tensor,
-                           k: int,
-                           measure: ggnn_torch_backend.DistanceMeasure = ggnn_torch_backend.DistanceMeasure.Euclidean
-                           ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def brute_force_search(
+        base_tensor: torch.Tensor,
+        query_tensor: torch.Tensor,
+        k: int,
+        measure: DistanceMeasure = DistanceMeasure.Euclidean,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Performs a brute-force (exact) k-NN search on the GPU.
         This is useful for generating ground truth data to evaluate the accuracy of the
@@ -125,9 +149,6 @@ class GGNNTorch(nn.Module):
         Returns:
             A tuple of (indices, distances) tensors, both of shape [Q, k].
         """
-        return ggnn_torch_backend.bf_query(
-            base_tensor=base_tensor,
-            query_tensor=query_tensor,
-            k=k,
-            measure=measure
+        return _backend.bf_query(
+            base_tensor=base_tensor, query_tensor=query_tensor, k=k, measure=measure
         )

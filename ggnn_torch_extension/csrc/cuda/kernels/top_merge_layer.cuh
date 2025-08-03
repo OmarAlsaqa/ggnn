@@ -2,7 +2,8 @@
 
 #include "../utils/distance.cuh"
 #include "../utils/k_best_list.cuh"
-#include "ggnn_cpu.h"
+#include "../../ggnn_config.h"
+#include "../../cpu/ggnn_cpu.h"
 
 namespace ggnn {
 namespace cuda {
@@ -23,33 +24,34 @@ struct TopMergeKernel {
   DistanceMeasure measure;
   uint32_t KBuild;
   const BaseT* d_base;
-  const KeyT* d_translation;
-  KeyT* d_graph;  // Removed const qualifier
+  KeyT* d_translation;
+  KeyT* d_graph;
   ValueT* d_nn1_dist_buffer;
   uint32_t S;
   uint32_t S_offset;
   uint32_t layer;
 
   // --- CONSTRUCTOR ---
-  TopMergeKernel(uint32_t D, DistanceMeasure measure, uint32_t KBuild, const BaseT* d_base,
-                 const KeyT* d_translation, KeyT* d_graph, ValueT* d_nn1_dist_buffer, uint32_t S,
-                 uint32_t S_offset, uint32_t layer)
-      : D(D),
-        measure(measure),
-        KBuild(KBuild),
-        d_base(d_base),
-        d_translation(d_translation),
-        d_graph(d_graph),
-        d_nn1_dist_buffer(d_nn1_dist_buffer),
-        S(S),
-        S_offset(S_offset),
-        layer(layer)
+  TopMergeKernel(uint32_t D_in, DistanceMeasure measure_in, uint32_t KBuild_in,
+                 const BaseT* d_base_in, KeyT* d_translation_in, KeyT* d_graph_in,
+                 ValueT* d_nn1_dist_buffer_in, uint32_t S_in, uint32_t S_offset_in,
+                 uint32_t layer_in)
+      : D(D_in),
+        measure(measure_in),
+        KBuild(KBuild_in),
+        d_base(d_base_in),
+        d_translation(d_translation_in),
+        d_graph(d_graph_in),
+        d_nn1_dist_buffer(d_nn1_dist_buffer_in),
+        S(S_in),
+        S_offset(S_offset_in),
+        layer(layer_in)
   {
   }
 
   // --- Device-Side Implementation ---
   // (Implementation from original top_merge_layer.cu)
-  __device__ void operator()()  // Removed 'const' qualifier
+  __device__ void operator()()
   {
     using Distance = ggnn::cuda::Distance<KeyT, ValueT, BaseT, BLOCK_DIM_X, DIST_ITEMS_PER_THREAD>;
     using KBestList = ggnn::cuda::KBestList<KeyT, ValueT, BLOCK_DIM_X>;

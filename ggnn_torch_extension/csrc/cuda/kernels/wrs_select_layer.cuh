@@ -2,7 +2,8 @@
 
 #include <cub/cub.cuh>
 #include <limits>
-#include "ggnn_cpu.h"
+#include "../../cpu/ggnn_cpu.h"
+#include "../../ggnn_config.h"
 
 namespace ggnn {
 namespace cuda {
@@ -19,11 +20,11 @@ struct WRSSelectionKernel {
   static constexpr uint32_t ITEMS_PER_THREAD = 2;
 
   // --- Member Variables (Kernel Parameters) ---
-  const KeyT* d_selection;
-  const KeyT* d_translation;
-  const KeyT* d_translation_layer;
+  KeyT* d_selection;
+  KeyT* d_translation;
+  KeyT* d_translation_layer;
   float* d_nn1_dist_buffer;
-  const float* d_rng;
+  float* d_rng;
   uint32_t Sglob;
   uint32_t S;
   uint32_t S_offset;
@@ -33,8 +34,8 @@ struct WRSSelectionKernel {
   uint32_t layer;
 
   // --- CONSTRUCTOR ---
-  WRSSelectionKernel(const KeyT* d_selection, const KeyT* d_translation,
-                     const KeyT* d_translation_layer, float* d_nn1_dist_buffer, const float* d_rng,
+  WRSSelectionKernel(KeyT* d_selection, KeyT* d_translation,
+                     KeyT* d_translation_layer, float* d_nn1_dist_buffer, float* d_rng,
                      uint32_t Sglob, uint32_t S, uint32_t S_offset, uint32_t G, uint32_t SG,
                      uint32_t SG_offset, uint32_t layer)
       : d_selection(d_selection),
@@ -54,7 +55,7 @@ struct WRSSelectionKernel {
 
   // --- Device-Side Implementation ---
   // (Implementation from original wrs_select_layer.cu)
-  __device__ void operator()() // Removed 'const'
+  __device__ void operator()()
   {
     using BlockRadixSort = cub::BlockRadixSort<ValueT, BLOCK_DIM_X, ITEMS_PER_THREAD, KeyT>;
     __shared__ typename BlockRadixSort::TempStorage temp_storage;

@@ -1,7 +1,8 @@
 #pragma once
 
-#include "distance.cuh"  // Local include to our other utility
-#include "ggnn_cpu.h"
+#include "distance.cuh" 
+#include "../../cpu/ggnn_cpu.h"
+#include "../../ggnn_config.h"
 
 #include <cstddef>
 #include <cstdint>

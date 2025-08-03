@@ -2,7 +2,8 @@
 
 #include "../utils/distance.cuh"
 #include "../utils/k_best_list.cuh"
-#include "ggnn_cpu.h"  // For GraphConfig and DistanceMeasure
+#include "../../cpu/ggnn_cpu.h"  // For GraphConfig and DistanceMeasure
+#include "../../ggnn_config.h"
 
 namespace ggnn::cuda::detail{
 
@@ -20,7 +21,7 @@ struct BruteForceQueryKernel {
   uint32_t D;
   DistanceMeasure measure;
   uint32_t KQuery;
-  const KeyT N_base;
+  KeyT N_base;
   const BaseT* d_base;
   const BaseT* d_query;
   KeyT* d_query_results;

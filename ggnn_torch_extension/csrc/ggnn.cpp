@@ -1,4 +1,5 @@
 #include <torch/extension.h>
+#include "ggnn_config.h" // Configuration header for GGNN
 #include "cpu/ggnn_cpu.h" // Our clean C++ API header
 
 // PYBIND11_MODULE is a macro that creates an entry point for the Python interpreter to load.

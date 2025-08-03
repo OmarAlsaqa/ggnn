@@ -1,6 +1,7 @@
 #pragma once
 
-#include "ggnn_cpu.h"
+#include "../../cpu/ggnn_cpu.h"
+#include "../../ggnn_config.h"
 
 namespace ggnn {
 namespace cuda {
@@ -22,12 +23,12 @@ struct SymBufferMergeKernel {
   uint32_t POINTS_PER_BLOCK{BLOCK_DIM_X / KF};  // How many graph nodes each thread block handles
 
   KeyT* d_sym_buffer;
-  const uint32_t* d_sym_atomic;
-  const KeyT* d_graph;
+  uint32_t* d_sym_atomic;
+  KeyT* d_graph;
 
   // --- CONSTRUCTOR ---
-  SymBufferMergeKernel(uint32_t KBuild, KeyT* d_sym_buffer, const uint32_t* d_sym_atomic,
-                       const KeyT* d_graph)
+  SymBufferMergeKernel(uint32_t KBuild, KeyT* d_sym_buffer, uint32_t* d_sym_atomic,
+                       KeyT* d_graph)
       : KBuild(KBuild),
         KF(KBuild / 2),
         KL(KBuild - KF),

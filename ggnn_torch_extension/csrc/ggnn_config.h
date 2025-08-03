@@ -7,8 +7,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
-
 namespace ggnn {
 
 // Common enum

@@ -1,7 +1,8 @@
 #pragma once
 
 #include "../utils/simple_knn_sym_cache.cuh"
-#include "ggnn_cpu.h"
+#include "../../cpu/ggnn_cpu.h"
+#include "../../ggnn_config.h"
 
 namespace ggnn {
 namespace cuda {
@@ -27,17 +28,17 @@ struct SymQueryKernel {
   DistanceMeasure measure;
   uint32_t KBuild;
   const BaseT* d_base;
-  const KeyT* d_graph;
-  const KeyT* d_translation;
-  const float* d_nn1_stats;
+  KeyT* d_graph;
+  KeyT* d_translation;
+  float* d_nn1_stats;
   float tau_build;
   KeyT* d_sym_buffer;
-  const uint32_t* d_sym_atomic;
+  uint32_t* d_sym_atomic;
 
   // --- CONSTRUCTOR ---
   SymQueryKernel(uint32_t D, DistanceMeasure measure, uint32_t KBuild, const BaseT* d_base,
-                 const KeyT* d_graph, const KeyT* d_translation, const float* d_nn1_stats,
-                 float tau_build, KeyT* d_sym_buffer, const uint32_t* d_sym_atomic)
+                 KeyT* d_graph, KeyT* d_translation, float* d_nn1_stats,
+                 float tau_build, KeyT* d_sym_buffer, uint32_t* d_sym_atomic)
       : D(D),
         measure(measure),
         KBuild(KBuild),
@@ -52,7 +53,7 @@ struct SymQueryKernel {
   }
   // --- Device-Side Implementation ---
   // (Implementation from original sym_query_layer.cu)
-  __device__ __forceinline__ void operator()() const
+  __device__ __forceinline__ void operator()()
   {
     static constexpr uint32_t K_BLOCK = 32;
     static_assert(K_BLOCK <= BLOCK_DIM_X);

@@ -1,7 +1,8 @@
 #pragma once
 
-#include "ggnn_cpu.h"
-#include "distance.cuh" // Now a local include within the same directory
+#include "distance.cuh"
+#include "../../cpu/ggnn_cpu.h"
+#include "../../ggnn_config.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -80,8 +81,12 @@ struct SimpleKNNCache {
                                             const uint32_t BEST_SIZE, const uint32_t SORTED_SIZE,
                                             const uint32_t CACHE_SIZE, const BaseT* d_base,
                                             const KeyT n, const ValueT xi_criteria)
-      : BEST_SIZE{BEST_SIZE}, SORTED_SIZE{SORTED_SIZE}, CACHE_SIZE(CACHE_SIZE),
-        s_sync(SyncPrivateTmpStorage()), rs_dist_calc(D, measure, d_base, n), r_xi(xi_criteria)
+      : BEST_SIZE{BEST_SIZE},
+        SORTED_SIZE{SORTED_SIZE},
+        CACHE_SIZE(CACHE_SIZE),
+        s_sync(SyncPrivateTmpStorage()),
+        rs_dist_calc(D, measure, d_base, n),
+        r_xi(xi_criteria)
   {
     initSharedStorage();
     init();
@@ -93,8 +98,12 @@ struct SimpleKNNCache {
                                             const uint32_t CACHE_SIZE, const BaseT* d_base,
                                             const BaseT* d_query, const KeyT n,
                                             const ValueT xi_criteria)
-      : BEST_SIZE{BEST_SIZE}, SORTED_SIZE{SORTED_SIZE}, CACHE_SIZE(CACHE_SIZE),
-        s_sync(SyncPrivateTmpStorage()), rs_dist_calc(D, measure, d_base, d_query, n), r_xi(xi_criteria)
+      : BEST_SIZE{BEST_SIZE},
+        SORTED_SIZE{SORTED_SIZE},
+        CACHE_SIZE(CACHE_SIZE),
+        s_sync(SyncPrivateTmpStorage()),
+        rs_dist_calc(D, measure, d_base, d_query, n),
+        r_xi(xi_criteria)
   {
     initSharedStorage();
     init();
@@ -108,17 +117,18 @@ struct SimpleKNNCache {
   __device__ __forceinline__ void push(const KeyT key, const ValueT dist)
   {
     // Check for duplicates in the entire cache (best list, prioQ, and visited list)
-    if (threadIdx.x == 0) s_sync = false;
+    if (threadIdx.x == 0)
+      s_sync = false;
     __syncthreads();
 
     for (uint32_t idx = threadIdx.x; idx < r0_visited_head && !s_sync; idx += BLOCK_DIM_X) {
-        if (s_cache[idx] == key) {
-            s_sync = true;
-        }
+      if (s_cache[idx] == key) {
+        s_sync = true;
+      }
     }
     __syncthreads();
-    if (s_sync) return;
-
+    if (s_sync)
+      return;
 
     const uint32_t head_idx_prioQ = r_prioQ_head;
 
@@ -131,37 +141,39 @@ struct SimpleKNNCache {
     uint32_t block_start = ((SORTED_SIZE + BLOCK_DIM_X - 1) / BLOCK_DIM_X) * BLOCK_DIM_X;
 
     while (true) {
-        if (active) {
-            if (r_cache != EMPTY_KEY) {
-                const uint32_t idx_next = (idx + 1 == SORTED_SIZE) ? BEST_SIZE : idx + 1;
-                if (idx_next < head_idx_prioQ || (head_idx_prioQ == BEST_SIZE && idx_next < SORTED_SIZE) ) {
-                    s_cache[idx_next] = r_cache;
-                    s_dists[idx_next] = r_dists;
-                }
-            }
-            const bool has_prev = idx != 0 && idx != head_idx_prioQ;
-            const uint32_t idx_prev = (idx == BEST_SIZE) ? SORTED_SIZE - 1 : idx - 1;
-            if (!has_prev || s_dists[idx_prev] <= dist) {
-                s_cache[idx] = key;
-                s_dists[idx] = dist;
-            }
+      if (active) {
+        if (r_cache != EMPTY_KEY) {
+          const uint32_t idx_next = (idx + 1 == SORTED_SIZE) ? BEST_SIZE : idx + 1;
+          if (idx_next < head_idx_prioQ ||
+              (head_idx_prioQ == BEST_SIZE && idx_next < SORTED_SIZE)) {
+            s_cache[idx_next] = r_cache;
+            s_dists[idx_next] = r_dists;
+          }
         }
-        if (block_start == 0) break;
-        block_start -= BLOCK_DIM_X;
-        idx = block_start + threadIdx.x;
-        active = idx < SORTED_SIZE;
-        if (active) {
-            const uint32_t head_idx_in_prioQ = head_idx_prioQ - BEST_SIZE;
-            if (idx >= BEST_SIZE) {
-                idx = (idx - BEST_SIZE + head_idx_in_prioQ < SORTED_SIZE - BEST_SIZE)
-                          ? idx + head_idx_in_prioQ
-                          : idx + head_idx_in_prioQ - (SORTED_SIZE - BEST_SIZE);
-            }
-            r_cache = s_cache[idx];
-            r_dists = s_dists[idx];
-            active &= (dist < r_dists);
+        const bool has_prev = idx != 0 && idx != head_idx_prioQ;
+        const uint32_t idx_prev = (idx == BEST_SIZE) ? SORTED_SIZE - 1 : idx - 1;
+        if (!has_prev || s_dists[idx_prev] <= dist) {
+          s_cache[idx] = key;
+          s_dists[idx] = dist;
         }
-        __syncthreads();
+      }
+      if (block_start == 0)
+        break;
+      block_start -= BLOCK_DIM_X;
+      idx = block_start + threadIdx.x;
+      active = idx < SORTED_SIZE;
+      if (active) {
+        const uint32_t head_idx_in_prioQ = head_idx_prioQ - BEST_SIZE;
+        if (idx >= BEST_SIZE) {
+          idx = (idx - BEST_SIZE + head_idx_in_prioQ < SORTED_SIZE - BEST_SIZE)
+                    ? idx + head_idx_in_prioQ
+                    : idx + head_idx_in_prioQ - (SORTED_SIZE - BEST_SIZE);
+        }
+        r_cache = s_cache[idx];
+        r_dists = s_dists[idx];
+        active &= (dist < r_dists);
+      }
+      __syncthreads();
     }
   }
 
@@ -197,26 +209,32 @@ struct SimpleKNNCache {
   {
     if constexpr (filter_known_keys) {
       __syncthreads();
-      for (uint32_t i = threadIdx.x; i < CACHE_SIZE; i += BLOCK_DIM_X) {
+      // Filter out keys that are already in our cache
+      for (uint32_t i = threadIdx.x; i < r0_visited_head; i += BLOCK_DIM_X) {
         const KeyT n = s_cache[i];
-        if (n == EMPTY_KEY) continue;
+        if (n == EMPTY_KEY)
+          continue;
         for (uint32_t k = 0; k < len; ++k) {
-          if (s_keys[k] == n) s_keys[k] = EMPTY_KEY;
+          if (s_keys[k] == n) {
+            s_keys[k] = EMPTY_KEY;
+          }
         }
       }
     }
     __syncthreads();
 
+    // Each thread processes candidates from the s_keys list
     for (uint32_t k = threadIdx.x; k < len; k += BLOCK_DIM_X) {
-        const KeyT other_n = s_keys[k];
-        if (other_n == EMPTY_KEY) continue;
-        
-        const KeyT other_m = (d_translation) ? d_translation[other_n] : other_n;
-        const ValueT dist = rs_dist_calc.distance_synced(other_m);
-        
-        if (dist < criteria()) {
-            push(other_n, dist);
-        }
+      const KeyT other_n = s_keys[k];
+      if (other_n == EMPTY_KEY)
+        continue;
+
+      const KeyT other_m = (d_translation) ? d_translation[other_n] : other_n;
+      const ValueT dist = rs_dist_calc.distance_synced(other_m);
+
+      if (dist < criteria()) {
+        push(other_n, dist);
+      }
     }
     __syncthreads();
   }
@@ -233,14 +251,17 @@ struct SimpleKNNCache {
     for (uint32_t i = threadIdx.x; i < CACHE_SIZE; i += BLOCK_DIM_X) {
       if (i < BEST_SIZE) {
         KeyT key = s_cache[i];
-        if (key != EMPTY_KEY) s_cache[i] = transform[key];
+        if (key != EMPTY_KEY)
+          s_cache[i] = transform[key];
         if (i + BEST_SIZE < SORTED_SIZE) {
           s_cache[i + BEST_SIZE] = s_cache[i];
           s_dists[i + BEST_SIZE] = s_dists[i];
         }
-      } else if (i >= 2 * BEST_SIZE || i >= SORTED_SIZE) {
+      }
+      else if (i >= 2 * BEST_SIZE || i >= SORTED_SIZE) {
         s_cache[i] = EMPTY_KEY;
-        if (i < SORTED_SIZE) s_dists[i] = EMPTY_DIST;
+        if (i < SORTED_SIZE)
+          s_dists[i] = EMPTY_DIST;
       }
     }
     r_prioQ_head = BEST_SIZE;
@@ -252,14 +273,15 @@ struct SimpleKNNCache {
 
   __device__ __forceinline__ void write_best(KeyT* d_buffer, uint32_t K, uint32_t idx_offset)
   {
-      for (uint32_t i = threadIdx.x; i < K; i += BLOCK_DIM_X) {
-          if (i < BEST_SIZE) {
-              const KeyT idx = s_cache[i];
-              d_buffer[i] = (idx != EMPTY_KEY) ? (idx + idx_offset) : EMPTY_KEY;
-          } else {
-              d_buffer[i] = EMPTY_KEY;
-          }
+    for (uint32_t i = threadIdx.x; i < K; i += BLOCK_DIM_X) {
+      if (i < BEST_SIZE) {
+        const KeyT idx = s_cache[i];
+        d_buffer[i] = (idx != EMPTY_KEY) ? (idx + idx_offset) : EMPTY_KEY;
       }
+      else {
+        d_buffer[i] = EMPTY_KEY;
+      }
+    }
   }
 
   __device__ __forceinline__ uint32_t get_dist_stats()
@@ -268,5 +290,5 @@ struct SimpleKNNCache {
   }
 };
 
-} // namespace cuda
-} // namespace ggnn
+}  // namespace cuda
+}  // namespace ggnn

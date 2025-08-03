@@ -1,0 +1,10 @@
+[build-system]
+requires = [
+    "setuptools>=64",
+    "torch"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ggnn_extension"
+version = "0.1.0"

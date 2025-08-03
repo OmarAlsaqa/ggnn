@@ -1,7 +1,8 @@
 #pragma once
 
 #include "../utils/simple_knn_cache.cuh"
-#include "ggnn_cpu.h"
+#include "../../cpu/ggnn_cpu.h"
+#include "../../ggnn_config.h"
 
 namespace ggnn {
 namespace cuda {
@@ -25,17 +26,17 @@ struct QueryKernel {
   uint32_t cache_size;
   float tau_query;
   uint32_t max_iterations;
-  const KeyT N_base;
+  KeyT N_base;
   uint32_t KBuild;
   uint32_t num_starting_points;
   const BaseT* d_base;
   const BaseT* d_query;
-  const KeyT* d_graph;
+  KeyT* d_graph;
   const KeyT* d_starting_points;
   const float* d_nn1_stats;
   KeyT* d_query_results;
   ValueT* d_query_results_dists;
-  const uint32_t* d_dist_stats;
+  uint32_t* d_dist_stats;
   uint32_t shards_per_gpu;
   uint32_t on_gpu_shard_id;
 
@@ -43,9 +44,9 @@ struct QueryKernel {
   QueryKernel(uint32_t D, DistanceMeasure measure, uint32_t KQuery, uint32_t sorted_size,
               uint32_t cache_size, float tau_query, uint32_t max_iterations, uint32_t N_base,
               uint32_t KBuild, uint32_t num_starting_points, const BaseT* d_base,
-              const BaseT* d_query, const KeyT* d_graph, const KeyT* d_starting_points,
+              const BaseT* d_query, KeyT* d_graph, const KeyT* d_starting_points,
               const float* d_nn1_stats, KeyT* d_query_results, ValueT* d_query_results_dists,
-              const uint32_t* d_dist_stats, uint32_t shards_per_gpu, uint32_t on_gpu_shard_id)
+              uint32_t* d_dist_stats, uint32_t shards_per_gpu, uint32_t on_gpu_shard_id)
       : D(D),
         measure(measure),
         KQuery(KQuery),
@@ -71,7 +72,8 @@ struct QueryKernel {
 
   // --- Device-Side Implementation ---
   // (Implementation from original query_layer.cu)
-  __device__ void operator()() /* remove const here */ {
+  __device__ void operator()()
+  {
     static constexpr uint32_t K_BLOCK = 32;
 
     using Cache = ::ggnn::cuda::SimpleKNNCache<KeyT, ValueT, BaseT, BLOCK_DIM_X,

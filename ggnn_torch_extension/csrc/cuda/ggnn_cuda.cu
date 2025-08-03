@@ -122,13 +122,12 @@ void launch_top_merge_kernel(const ggnn::GraphConfig& config, GraphView& graph,
                ::ggnn::bit_ceil((config.D + dist_items_per_thread - 1) / dist_items_per_thread));
 
   auto launch = [&](auto block_dim, auto items_per_thread) {
+    const uint32_t s_val = layer ? config.S : config.S0;
+    const uint32_t s_offset_val = layer ? 0 : config.S0_off;
     detail::TopMergeKernel<KeyT, ValueT, BaseT, decltype(block_dim)::value,
                            decltype(items_per_thread)::value>
         kernel(config.D, measure, config.KBuild, base_ptr, graph.translation[layer],
-               graph.graph[layer], buffer.nn1_dist_buffer);
-    kernel.S = layer ? config.S : config.S0;
-    kernel.S_offset = layer ? 0 : config.S0_off;
-    kernel.layer = layer;
+               graph.graph[layer], buffer.nn1_dist_buffer, s_val, s_offset_val, layer);
 
     const size_t sm_size = config.KBuild * (sizeof(KeyT) + sizeof(ValueT));
     detail::top_merge_kernel_launcher<<<config.Ns[layer], block_dim_x, sm_size, stream>>>(kernel);
@@ -145,8 +144,10 @@ void launch_top_merge_kernel(const ggnn::GraphConfig& config, GraphView& graph,
     else if (block_dim_x == 1024)
       launch(std::integral_constant<uint32_t, 1024>(), std::integral_constant<uint32_t, 4>());
     else
-      TORCH_CHECK(false, "Unsupported block dimension for dist_items_per_thread=4 in top merge kernel.");
-  } else if (dist_items_per_thread == 8) {
+      TORCH_CHECK(false,
+                  "Unsupported block dimension for dist_items_per_thread=4 in top merge kernel.");
+  }
+  else if (dist_items_per_thread == 8) {
     if (block_dim_x == 128)
       launch(std::integral_constant<uint32_t, 128>(), std::integral_constant<uint32_t, 8>());
     else if (block_dim_x == 256)
@@ -156,8 +157,10 @@ void launch_top_merge_kernel(const ggnn::GraphConfig& config, GraphView& graph,
     else if (block_dim_x == 1024)
       launch(std::integral_constant<uint32_t, 1024>(), std::integral_constant<uint32_t, 8>());
     else
-      TORCH_CHECK(false, "Unsupported block dimension for dist_items_per_thread=8 in top merge kernel.");
-  } else {
+      TORCH_CHECK(false,
+                  "Unsupported block dimension for dist_items_per_thread=8 in top merge kernel.");
+  }
+  else {
     TORCH_CHECK(false, "Unsupported dist_items_per_thread for top merge kernel.");
   }
 }
@@ -178,17 +181,23 @@ void launch_merge_kernel(const ggnn::GraphConfig& config, GraphView& graph, Grap
   auto launch = [&](auto block_dim, auto items_per_thread) {
     detail::MergeKernel<KeyT, ValueT, BaseT, decltype(block_dim)::value,
                         decltype(items_per_thread)::value>
-        kernel(config.D, measure, config.KBuild, config.S, base_ptr, graph.selection[1],
-               graph.translation[1], graph.graph[0], buffer.graph_buffer, graph.nn1_stats,
-               buffer.nn1_dist_buffer);
-    kernel.layer_top = layer_top;
-    kernel.layer_btm = layer_btm;
-    kernel.G = config.G;
-    kernel.S0 = config.S0;
-    kernel.S0_offset = config.S0_off;
-    kernel.Ns_offsets = config.Ns_offsets;
-    kernel.STs_offsets = config.STs_offsets;
-    kernel.tau_build = tau_build;
+        kernel(config.D, measure, config.KBuild, base_ptr,
+               graph.selection[1],      // d_selection
+               graph.translation[1],    // d_translation
+               graph.graph[0],          // d_graph
+               buffer.graph_buffer,     // d_graph_buffer
+               graph.nn1_stats,         // d_nn1_stats
+               buffer.nn1_dist_buffer,  // d_nn1_dist_buffer
+               config.S,                // S (was missing from call)
+               layer_top,               // layer_top (order corrected)
+               layer_btm,               // layer_btm
+               config.G,                // G
+               config.S0,               // S0
+               config.S0_off,           // S0_offset
+               config.Ns_offsets,       // Ns_offsets
+               config.STs_offsets,      // STs_offsets
+               tau_build                // tau_build
+        );
     const size_t sm_size = kernel.CACHE_SIZE * sizeof(KeyT) + kernel.SORTED_SIZE * sizeof(ValueT);
     detail::merge_kernel_launcher<<<config.Ns[layer_btm], block_dim_x, sm_size, stream>>>(kernel);
   };
@@ -207,8 +216,10 @@ void launch_merge_kernel(const ggnn::GraphConfig& config, GraphView& graph, Grap
     else if (block_dim_x == 1024)
       launch(std::integral_constant<uint32_t, 1024>(), std::integral_constant<uint32_t, 4>());
     else
-      TORCH_CHECK(false, "Unsupported block dimension for dist_items_per_thread=4 in merge kernel.");
-  } else if (dist_items_per_thread == 8) {
+      TORCH_CHECK(false,
+                  "Unsupported block dimension for dist_items_per_thread=4 in merge kernel.");
+  }
+  else if (dist_items_per_thread == 8) {
     if (block_dim_x == 32)
       launch(std::integral_constant<uint32_t, 32>(), std::integral_constant<uint32_t, 8>());
     else if (block_dim_x == 64)
@@ -222,8 +233,10 @@ void launch_merge_kernel(const ggnn::GraphConfig& config, GraphView& graph, Grap
     else if (block_dim_x == 1024)
       launch(std::integral_constant<uint32_t, 1024>(), std::integral_constant<uint32_t, 8>());
     else
-      TORCH_CHECK(false, "Unsupported block dimension for dist_items_per_thread=8 in merge kernel.");
-  } else {
+      TORCH_CHECK(false,
+                  "Unsupported block dimension for dist_items_per_thread=8 in merge kernel.");
+  }
+  else {
     TORCH_CHECK(false, "Unsupported dist_items_per_thread for merge kernel.");
   }
 
@@ -284,31 +297,45 @@ void launch_sym_step(const ggnn::GraphConfig& config, GraphView& graph, GraphBuf
 
   if (dist_items_per_thread == 4) {
     if (block_dim_x == 64)
-      launch_sym_query(std::integral_constant<uint32_t, 64>(), std::integral_constant<uint32_t, 4>());
+      launch_sym_query(std::integral_constant<uint32_t, 64>(),
+                       std::integral_constant<uint32_t, 4>());
     else if (block_dim_x == 128)
-      launch_sym_query(std::integral_constant<uint32_t, 128>(), std::integral_constant<uint32_t, 4>());
+      launch_sym_query(std::integral_constant<uint32_t, 128>(),
+                       std::integral_constant<uint32_t, 4>());
     else if (block_dim_x == 256)
-      launch_sym_query(std::integral_constant<uint32_t, 256>(), std::integral_constant<uint32_t, 4>());
+      launch_sym_query(std::integral_constant<uint32_t, 256>(),
+                       std::integral_constant<uint32_t, 4>());
     else if (block_dim_x == 512)
-      launch_sym_query(std::integral_constant<uint32_t, 512>(), std::integral_constant<uint32_t, 4>());
+      launch_sym_query(std::integral_constant<uint32_t, 512>(),
+                       std::integral_constant<uint32_t, 4>());
     else if (block_dim_x == 1024)
-      launch_sym_query(std::integral_constant<uint32_t, 1024>(), std::integral_constant<uint32_t, 4>());
+      launch_sym_query(std::integral_constant<uint32_t, 1024>(),
+                       std::integral_constant<uint32_t, 4>());
     else
-      TORCH_CHECK(false, "Unsupported block dimension for dist_items_per_thread=4 in sym query kernel.");
-  } else if (dist_items_per_thread == 8) {
+      TORCH_CHECK(false,
+                  "Unsupported block dimension for dist_items_per_thread=4 in sym query kernel.");
+  }
+  else if (dist_items_per_thread == 8) {
     if (block_dim_x == 64)
-      launch_sym_query(std::integral_constant<uint32_t, 64>(), std::integral_constant<uint32_t, 8>());
+      launch_sym_query(std::integral_constant<uint32_t, 64>(),
+                       std::integral_constant<uint32_t, 8>());
     else if (block_dim_x == 128)
-      launch_sym_query(std::integral_constant<uint32_t, 128>(), std::integral_constant<uint32_t, 8>());
+      launch_sym_query(std::integral_constant<uint32_t, 128>(),
+                       std::integral_constant<uint32_t, 8>());
     else if (block_dim_x == 256)
-      launch_sym_query(std::integral_constant<uint32_t, 256>(), std::integral_constant<uint32_t, 8>());
+      launch_sym_query(std::integral_constant<uint32_t, 256>(),
+                       std::integral_constant<uint32_t, 8>());
     else if (block_dim_x == 512)
-      launch_sym_query(std::integral_constant<uint32_t, 512>(), std::integral_constant<uint32_t, 8>());
+      launch_sym_query(std::integral_constant<uint32_t, 512>(),
+                       std::integral_constant<uint32_t, 8>());
     else if (block_dim_x == 1024)
-      launch_sym_query(std::integral_constant<uint32_t, 1024>(), std::integral_constant<uint32_t, 8>());
+      launch_sym_query(std::integral_constant<uint32_t, 1024>(),
+                       std::integral_constant<uint32_t, 8>());
     else
-      TORCH_CHECK(false, "Unsupported block dimension for dist_items_per_thread=8 in sym query kernel.");
-  } else {
+      TORCH_CHECK(false,
+                  "Unsupported block dimension for dist_items_per_thread=8 in sym query kernel.");
+  }
+  else {
     TORCH_CHECK(false, "Unsupported dist_items_per_thread for sym query kernel.");
   }
 
@@ -336,7 +363,8 @@ void compute_nn1_stats(const ggnn::GraphConfig& config, GraphView& graph, GraphB
 
 // Launcher for the main query
 template <typename BaseT>
-void launch_query_kernel_typed(const ggnn::cuda::QueryKernelParams &params, cudaStream_t stream) {
+void launch_query_kernel_typed(const ggnn::cuda::QueryKernelParams& params, cudaStream_t stream)
+{
   // Logic from original QueryKernelsImpl::query
   static constexpr uint32_t WARP_SIZE = 32;
   static constexpr uint32_t DIST_ITEMS_PER_THREAD = 4;
@@ -353,27 +381,16 @@ void launch_query_kernel_typed(const ggnn::cuda::QueryKernelParams &params, cuda
   const uint32_t sorted_size = std::max(cache_size < 512U ? 64U : 32U, required_sorted_size);
   TORCH_CHECK(block_dim_x <= 1024, "Calculated block dimension exceeds CUDA limits.");
   auto launch = [&](auto block_dim) {
-    detail::QueryKernel<KeyT, ValueT, BaseT, decltype(block_dim)::value, true, false> kernel;
-    kernel.D = params.D;
-    kernel.measure = params.measure;
-    kernel.KQuery = params.KQuery;
-    kernel.sorted_size = sorted_size;
-    kernel.cache_size = cache_size;
-    kernel.tau_query = params.tau_query;
-    kernel.max_iterations = params.max_iterations;
-    kernel.N_base = params.N_base;
-    kernel.KBuild = params.KBuild;
-    kernel.num_starting_points = params.num_starting_points;
-    kernel.d_base = static_cast<const BaseT*>(params.d_base);
-    kernel.d_query = static_cast<const BaseT*>(params.d_query);
-    kernel.d_graph = params.d_graph_layer0;
-    kernel.d_starting_points = params.d_starting_points;
-    kernel.d_nn1_stats = params.d_nn1_stats;
-    kernel.d_query_results = params.d_query_results;
-    kernel.d_query_results_dists = params.d_query_results_dists;
-    kernel.d_dist_stats = nullptr;  // not implemented in this version
-    kernel.shards_per_gpu = 1;      // simplified for single-GPU use
-    kernel.on_gpu_shard_id = 0;
+    detail::QueryKernel<KeyT, ValueT, BaseT, decltype(block_dim)::value, true, false> kernel(
+        params.D, params.measure, params.KQuery, sorted_size, cache_size, params.tau_query,
+        params.max_iterations, params.N_base, params.KBuild, params.num_starting_points,
+        static_cast<const BaseT*>(params.d_base), static_cast<const BaseT*>(params.d_query),
+        params.d_graph_layer0, params.d_starting_points, params.d_nn1_stats, params.d_query_results,
+        params.d_query_results_dists,
+        nullptr,  // d_dist_stats (not used in this version)
+        1,        // shards_per_gpu (simplified)
+        0         // on_gpu_shard_id (simplified)
+    );
     const size_t sm_size = kernel.cache_size * sizeof(KeyT) + kernel.sorted_size * sizeof(ValueT);
     TORCH_CHECK(sm_size < 48 * 1024, "Shared memory usage exceeds typical limits.");
 
@@ -399,34 +416,30 @@ void launch_query_kernel_typed(const ggnn::cuda::QueryKernelParams &params, cuda
 
 // Launcher for the brute force query
 template <typename BaseT>
-void launch_bf_query_kernel_typed(const BaseT *d_data, const BaseT *d_queries,
-                                  ggnn::cuda::KeyT *d_out_keys, ggnn::cuda::ValueT *d_out_values,
-                                  int64_t num_data, int64_t num_queries, int64_t dim,
-                                  int k, ggnn::DistanceMeasure dist_measure, cudaStream_t stream) {
+void launch_bf_query_kernel_typed(const BaseT* d_base, const BaseT* d_query, KeyT* d_out_ids,
+                                  ValueT* d_out_dists, int64_t num_base, int64_t num_queries,
+                                  int64_t dim, int k, ggnn::DistanceMeasure measure,
+                                  cudaStream_t stream)
+{
   // Logic from original QueryKernelsImpl::bruteForceQuery
   static constexpr uint32_t WARP_SIZE = 32;
   const uint32_t dist_items_per_thread = 4;
   const uint32_t dimension_block_dim_x =
-      ::ggnn::bit_ceil((D + dist_items_per_thread - 1) / dist_items_per_thread);
+      ::ggnn::bit_ceil((uint32_t)(dim + dist_items_per_thread - 1) / dist_items_per_thread);
   const uint32_t block_dim_x = std::max(WARP_SIZE, dimension_block_dim_x);
+  TORCH_CHECK(block_dim_x <= 1024, "Calculated block dimension exceeds CUDA limits for bf_query.");
 
   // Construct QueryKernelParams from the function arguments
-  ggnn::cuda::QueryKernelParams params;
-  params.d_data = d_data;
-  params.d_queries = d_queries;
-  params.d_out_keys = d_out_keys;
-  params.d_out_values = d_out_values;
-  params.num_data = num_data;
-  params.num_queries = num_queries;
-  params.dim = dim;
-  params.k = k;
-  params.dist_measure = dist_measure;
-  params.stream = stream; // Assuming stream is part of params or passed separately
+  auto launch = [&](auto block_dim_const) {
+    // Construct the kernel directly from the function arguments.
+    // Do NOT use QueryKernelParams here.
+    BruteForceQueryKernel<KeyT, ValueT, BaseT, decltype(block_dim_const)::value, true> kernel(
+        (uint32_t)dim, measure, (uint32_t)k, (KeyT)num_base, d_base, d_query, d_out_ids,
+        d_out_dists);
 
-  auto kernel = [&params] (auto BLOCK_SIZE_CONST) { // Capture params by reference
-    return BruteForceQueryKernel<KeyT, ValueT, BaseT, BLOCK_SIZE_CONST.value, true>(params); // Pass params to constructor
+    const size_t sm_size = k * (sizeof(KeyT) + sizeof(ValueT));
+    bf_query_kernel_launcher<<<num_queries, block_dim_x, sm_size, stream>>>(kernel);
   };
-
   if (block_dim_x <= 32)
     launch(std::integral_constant<uint32_t, 32>());
   else if (block_dim_x <= 64)
@@ -452,7 +465,7 @@ void launch_bf_query_kernel_typed(const BaseT *d_data, const BaseT *d_queries,
 
 // --- Launcher Implementations ---
 
-// This is the full implementation for the public launcher function in csrc/cuda/ggnn_cuda.cu
+// This is the full implementation for the public launcher function in csrc/ggnn_cuda.cu
 
 void launch_graph_construction(const ggnn::GraphConfig& config, GraphView& graph,
                                GraphBufferView& buffer, const void* base_ptr_void,

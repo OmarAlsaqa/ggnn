@@ -72,7 +72,7 @@ struct QueryKernelParams {
     ValueT* d_query_results_dists;
 
     // Pointers from the GraphView
-    const KeyT* d_graph_layer0;
+    KeyT* d_graph_layer0;
     const KeyT* d_starting_points;
     const float* d_nn1_stats;
     

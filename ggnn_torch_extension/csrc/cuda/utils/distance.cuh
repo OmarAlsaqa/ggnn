@@ -1,7 +1,8 @@
 #pragma once // Use pragma once for modern C++ headers
 
 // Correct the include path to point to our new host-side API header
-#include "ggnn_cpu.h"
+#include "../../cpu/ggnn_cpu.h"
+#include "../../ggnn_config.h"
 
 #include <cstddef>
 #include <cstdint>
